@@ -171,7 +171,7 @@
                     <div class="input-group">
                         <label class="block text-sm font-bold text-slate-700 mb-2">Ngày Sinh <span class="text-red-500">*</span></label>
                         <div class="relative">
-                            <input type="date" id="inp-dob" required class="input-field w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-royal focus:border-royal outline-none transition-all text-slate-700 font-medium">
+                            <input type="date" id="inp-dob" value="2011-01-01" required class="input-field w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-royal focus:border-royal outline-none transition-all text-slate-700 font-medium">
                             <i class="fa-solid fa-calendar-day input-icon"></i>
                         </div>
                     </div>
@@ -341,7 +341,6 @@
         import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
         // --- CẤU HÌNH LIÊN KẾT ---
-        const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/your-sheet-id/edit";
         const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9jVA5QEf_-RswEGenlu6FdYhd3mpzIKnWzuUVzPWuftewJVL16sHx1gwOomWu5xjU/exec"; 
 
         const CAMPUSES = [
@@ -364,16 +363,19 @@
         });
 
         // --- FIREBASE INIT ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'tam-duc-mock-exam';
         
         let app, auth, db;
-        try {
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-        } catch(e) {
-            console.error("Firebase init error", e);
+        // Chỉ kết nối Firebase nếu đang chạy trong môi trường có sẵn cấu hình ngầm
+        if (firebaseConfig && Object.keys(firebaseConfig).length > 0) {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+            } catch(e) {
+                console.error("Firebase init error", e);
+            }
         }
 
         // --- STATE & DOM ELEMENTS ---
@@ -422,16 +424,17 @@
             });
             initAuth();
         } else {
+            // Nếu đem code lên Vercel (không có Firebase Auth), lập tức tắt màn hình loading
             hideLoading();
         }
 
         // --- FETCH DATA LIST ---
         const fetchRegistrations = () => {
+            if(!db) return;
             const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
             onSnapshot(regsRef, (snapshot) => {
                 const data = [];
                 snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-                // Sort by time
                 data.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
                 registrationsList = data;
                 hideLoading();
@@ -455,6 +458,12 @@
             const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
             const prefix = `${dd}${mm}`;
 
+            // Chế độ Vercel (Không Database): Sinh STT 3 số ngẫu nhiên từ 100-999 để tránh trùng SBD
+            if (!db) {
+                const randomSeq = Math.floor(Math.random() * 900) + 100;
+                return `${prefix}${randomSeq}`;
+            }
+
             const sameDob = registrationsList.filter(r => r.sbd && r.sbd.startsWith(prefix));
             const sequence = sameDob.length + 1;
             const seqString = String(sequence).padStart(3, '0');
@@ -463,6 +472,12 @@
         };
 
         const calculateRoom = (location) => {
+            // Chế độ Vercel (Không Database): Random xếp vào phòng 01 hoặc 02
+            if (!db) {
+                const randomRoom = Math.floor(Math.random() * 2) + 1;
+                return `Phòng ${String(randomRoom).padStart(2, '0')}`;
+            }
+
             const studentsAtLoc = registrationsList.filter(r => r.examLocation === location);
             const count = studentsAtLoc.length;
             const roomNumber = Math.floor(count / 20) + 1;
@@ -472,8 +487,10 @@
         // --- SUBMIT EVENT ---
         ui.form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!currentUser || !db) {
-                alert("Hệ thống chưa kết nối dữ liệu. Vui lòng thử lại sau.");
+            
+            // Nếu không có cả Google Sheet lẫn Firebase -> Mới báo lỗi
+            if (!GOOGLE_APPS_SCRIPT_URL && !db) {
+                alert("Hệ thống chưa được cấu hình lưu trữ dữ liệu!");
                 return;
             }
 
@@ -499,15 +516,24 @@
                 const newReg = {
                     ...formData,
                     examLocation, sbd, room,
-                    createdAt: serverTimestamp(),
-                    userId: currentUser.uid
+                    createdAt: new Date().toISOString(),
+                    userId: currentUser ? currentUser.uid : 'guest'
                 };
 
-                // Lưu vào Firestore
-                const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
-                await addDoc(regsRef, newReg);
+                // Lưu vào Firestore (Chỉ chạy khi ở trong môi trường hỗ trợ Firebase)
+                if (db) {
+                    try {
+                        const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
+                        await addDoc(regsRef, {
+                            ...newReg,
+                            createdAt: serverTimestamp() // Sử dụng giờ chuẩn server Firebase
+                        });
+                    } catch(err) {
+                        console.error("Firestore error:", err);
+                    }
+                }
 
-                // Gửi Webhook tới Google Sheets
+                // Gửi Webhook tới Google Sheets (Hoạt động hoàn hảo trên Vercel)
                 if (GOOGLE_APPS_SCRIPT_URL) {
                     try {
                         const sheetData = new URLSearchParams();
@@ -521,9 +547,11 @@
                         sheetData.append("room", newReg.room);
                         sheetData.append("createdAt", new Date().toLocaleString('vi-VN'));
 
-                        fetch(GOOGLE_APPS_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: sheetData })
-                            .catch(err => console.log("Webhook sync background error", err));
-                    } catch(err) {}
+                        // Gửi HTTP POST request ẩn ngầm tới App Script
+                        await fetch(GOOGLE_APPS_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: sheetData });
+                    } catch(err) {
+                        console.error("Webhook error:", err);
+                    }
                 }
 
                 // Hiển thị Phiếu
@@ -532,7 +560,7 @@
 
             } catch (error) {
                 console.error(error);
-                alert("Có lỗi xảy ra khi lưu! Vui lòng thử lại.");
+                alert("Có lỗi xảy ra khi xử lý dữ liệu! Vui lòng thử lại.");
             } finally {
                 // Khôi phục nút
                 ui.btnSubmit.innerHTML = originalBtnContent;
