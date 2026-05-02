@@ -1,420 +1,580 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Printer, UserPlus, CheckCircle2, MapPin, Calendar, Hash, DoorOpen, Phone, User, Building, LayoutList, ExternalLink } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Khảo Thí Tâm Đức</title>
 
-// --- CẤU HÌNH FIREBASE ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'tam-duc-mock-exam';
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-// --- DANH MỤC CƠ SỞ & LOGIC ĐỊA ĐIỂM ---
-const CAMPUSES = [
-  "Biệt Thự Dĩ An",
-  "Nguyễn Văn Siêu",
-  "Tân Đông Hiệp B",
-  "Bình An",
-  "Đông Hòa",
-  "Lê Hồng Phong",
-  "Không Học Tại Tâm Đức"
-];
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-// Logic xác định địa điểm thi dựa trên cơ sở đang học
-const getExamLocation = (campus) => {
-  if (["Biệt Thự Dĩ An", "Nguyễn Văn Siêu", "Lê Hồng Phong", "Không Học Tại Tâm Đức"].includes(campus)) {
-    return "Khu Biệt Thự"; // Gán học sinh không học tại TT và các cơ sở này về Khu Biệt Thự
-  }
-  if (["Tân Đông Hiệp B"].includes(campus)) {
-    return "Tân Đông Hiệp B";
-  }
-  if (["Bình An", "Đông Hòa"].includes(campus)) {
-    return "Bình An";
-  }
-  return "Khu Biệt Thự"; // Mặc định
-};
-
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [registrations, setRegistrations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  // 1. LINK GOOGLE SHEET (Dành cho nút bấm xem danh sách trên menu)
-  const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/your-sheet-id/edit";
-  
-  // 2. LINK GOOGLE APPS SCRIPT (Dành để tự động đổ dữ liệu về sheet sau khi đăng ký)
-  const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyZSyup7v_0WEFEoVDGiNQovtkBbv5jQbceW6c4We4uSrQwNXdRg0KzcQe01jF3HHma/exec"; 
-  
-  // Form State
-  const [formData, setFormData] = useState({
-    fullName: '',
-    dob: '',
-    gender: 'Nam',
-    phone: '',
-    campus: CAMPUSES[0]
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [ticketData, setTicketData] = useState(null);
-
-  // 1. Khởi tạo Auth
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        royal: '#2563eb',
+                        indigo: '#4f46e5',
+                        sky: '#0ea5e9',
+                        accent: '#f59e0b',
+                        success: '#10b981',
+                    }
+                }
+            }
         }
-      } catch (error) {
-        console.error("Auth error:", error);
-      }
-    };
-    initAuth();
+    </script>
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. Lấy dữ liệu đăng ký để tính toán SBD và Phòng thi
-  useEffect(() => {
-    if (!user) return;
-
-    const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
-    
-    const unsubscribe = onSnapshot(regsRef, (snapshot) => {
-      const data = [];
-      snapshot.forEach((doc) => {
-        data.push({ id: doc.id, ...doc.data() });
-      });
-      // Sắp xếp theo thời gian đăng ký
-      data.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
-      setRegistrations(data);
-      setLoading(false);
-    }, (error) => {
-      console.error("Lỗi lấy dữ liệu:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  // --- LOGIC XỬ LÝ ĐĂNG KÝ ---
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const generateSBD = (dobString) => {
-    const dateObj = new Date(dobString);
-    const dd = String(dateObj.getDate()).padStart(2, '0');
-    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const prefix = `${dd}${mm}`;
-
-    const sameDobStudents = registrations.filter(r => r.sbd && r.sbd.startsWith(prefix));
-    const sequence = sameDobStudents.length + 1;
-    
-    const seqString = String(sequence).padStart(3, '0');
-    return `${prefix}${seqString}`;
-  };
-
-  const calculateRoom = (location) => {
-    const studentsAtLocation = registrations.filter(r => r.examLocation === location);
-    const currentCount = studentsAtLocation.length;
-    const roomNumber = Math.floor(currentCount / 20) + 1;
-    return `Phòng ${String(roomNumber).padStart(2, '0')}`;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!user) return;
-    setIsSubmitting(true);
-
-    try {
-      const examLocation = getExamLocation(formData.campus);
-      const sbd = generateSBD(formData.dob);
-      const room = calculateRoom(examLocation);
-
-      const newRegistration = {
-        ...formData,
-        examLocation,
-        sbd,
-        room,
-        createdAt: serverTimestamp(),
-        userId: user.uid
-      };
-
-      const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
-      await addDoc(regsRef, newRegistration);
-
-      if (GOOGLE_APPS_SCRIPT_URL) {
-        try {
-          const sheetData = new URLSearchParams();
-          sheetData.append("fullName", newRegistration.fullName);
-          sheetData.append("dob", newRegistration.dob);
-          sheetData.append("gender", newRegistration.gender);
-          sheetData.append("phone", `'${newRegistration.phone}`);
-          sheetData.append("campus", newRegistration.campus);
-          sheetData.append("sbd", `'${newRegistration.sbd}`);
-          sheetData.append("examLocation", newRegistration.examLocation);
-          sheetData.append("room", newRegistration.room);
-          sheetData.append("createdAt", new Date().toLocaleString('vi-VN'));
-
-          fetch(GOOGLE_APPS_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: sheetData
-          }).catch(err => console.error("Lỗi kết nối WebApp:", err));
-        } catch (err) {
-          console.error("Lỗi chuẩn bị dữ liệu Sheet:", err);
+    <!-- Custom CSS cho Hiệu ứng -->
+    <style>
+        /* Nền chấm bi mờ tạo chiều sâu */
+        body {
+            background-color: #f0f4f8;
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 24px 24px;
         }
-      }
 
-      setTicketData(newRegistration);
-      setFormData({
-        fullName: '',
-        dob: '',
-        gender: 'Nam',
-        phone: '',
-        campus: CAMPUSES[0]
-      });
-    } catch (error) {
-      console.error("Lỗi khi đăng ký:", error);
-      alert("Có lỗi xảy ra, vui lòng thử lại!");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+        /* Hiệu ứng Glassmorphism cho Main Card */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.05), 0 0 20px rgba(37, 99, 235, 0.05);
+        }
 
-  const handlePrint = () => {
-    window.print();
-  };
+        /* Hiệu ứng Input & Icon */
+        .input-group {
+            position: relative;
+        }
+        
+        .input-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8; /* slate-400 */
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
-  }
+        /* Khi input được focus -> Tác động lên icon */
+        .input-field:focus + .input-icon,
+        .input-field:focus-within + .input-icon {
+            color: #2563eb; /* royal blue */
+            transform: translateY(-50%) scale(1.25);
+            filter: drop-shadow(0 2px 4px rgba(37, 99, 235, 0.4));
+        }
 
-  return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 pb-12">
-      {/* Header */}
-      <div className="bg-blue-700 text-white p-4 shadow-md print:hidden">
-        <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold">Hệ Thống Giáo Dục Tâm Đức</h1>
-            <p className="text-blue-100 text-sm">Trung Tâm Luyện Thi Tâm Đức - Cấp 2</p>
-          </div>
-          <div className="flex flex-wrap justify-center sm:justify-end bg-blue-800 rounded-lg p-1 gap-1 w-full sm:w-auto">
-            <button 
-              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md transition flex items-center justify-center gap-2 bg-white text-blue-700 font-semibold shadow text-sm sm:text-base"
-            >
-              <UserPlus size={18} /> Đăng Ký
-            </button>
-            <a 
-              href={GOOGLE_SHEET_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md transition flex items-center justify-center gap-2 text-blue-100 hover:bg-blue-600 text-sm sm:text-base"
-              title="Mở bảng tính Google Sheets"
-            >
-              <LayoutList size={18} /> Danh Sách <ExternalLink size={14} className="hidden sm:block" />
-            </a>
-          </div>
-        </div>
-      </div>
+        /* Nút bấm Gradient Hover */
+        .btn-gradient {
+            background: linear-gradient(135deg, #2563eb, #0ea5e9);
+            transition: all 0.3s ease;
+        }
+        .btn-gradient:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px -10px rgba(37, 99, 235, 0.6);
+            background: linear-gradient(135deg, #1d4ed8, #0284c7);
+        }
 
-      <div className="max-w-4xl mx-auto mt-6 sm:mt-8 px-3 sm:px-4">
-        <div className="space-y-6 sm:space-y-8">
-          {!ticketData ? (
-            <div className="bg-white p-5 sm:p-6 md:p-8 rounded-xl shadow-lg border border-gray-100 print:hidden">
-              <div className="text-center mb-6 sm:mb-8">
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-800 uppercase text-blue-700">Đăng Ký Thi Thử Tuyển Sinh 10</h2>
-                <p className="text-gray-500 mt-2 text-sm sm:text-base">Vui lòng điền thông tin chính xác để hệ thống xếp phòng tự động</p>
-              </div>
+        /* Tab Active */
+        .tab-active {
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: white;
+            box-shadow: 0 4px 15px -3px rgba(37, 99, 235, 0.4);
+        }
 
-              <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
-                  {/* Họ và tên */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-                      <User size={16} className="text-blue-500"/> Họ và Tên Học Sinh
-                    </label>
-                    <input 
-                      type="text" required name="fullName"
-                      value={formData.fullName} onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                      placeholder="VD: Nguyễn Văn A"
-                    />
-                  </div>
+        /* Ẩn các phần tử khi in */
+        @media print {
+            body {
+                background: white !important;
+            }
+            .print-hidden {
+                display: none !important;
+            }
+            .glass-card {
+                box-shadow: none !important;
+                border: none !important;
+                background: white !important;
+            }
+            .ticket-border {
+                border: 2px solid #e2e8f0 !important;
+                border-radius: 12px !important;
+                padding: 2rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen pb-12">
 
-                  {/* Ngày sinh */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-                      <Calendar size={16} className="text-blue-500"/> Ngày Sinh
-                    </label>
-                    <input 
-                      type="date" required name="dob"
-                      value={formData.dob} onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                    />
-                  </div>
-
-                  {/* Giới tính */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-                      <User size={16} className="text-blue-500"/> Giới Tính
-                    </label>
-                    <select 
-                      name="gender" value={formData.gender} onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                    >
-                      <option value="Nam">Nam</option>
-                      <option value="Nữ">Nữ</option>
-                    </select>
-                  </div>
-
-                  {/* Số điện thoại */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-                      <Phone size={16} className="text-blue-500"/> Số Điện Thoại Phụ Huynh
-                    </label>
-                    <input 
-                      type="tel" required name="phone" pattern="[0-9]{10,11}"
-                      value={formData.phone} onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                      placeholder="VD: 0901234567"
-                    />
-                  </div>
-
-                  {/* Cơ sở đang học */}
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-                      <Building size={16} className="text-blue-500"/> Cơ Sở Đang Học
-                    </label>
-                    <select 
-                      name="campus" value={formData.campus} onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition bg-blue-50"
-                    >
-                      {CAMPUSES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-2 italic">* Hệ thống sẽ tự động xếp địa điểm thi dựa trên cơ sở bạn chọn.</p>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-gray-100">
-                  <button 
-                    type="submit" disabled={isSubmitting}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 sm:py-3 px-4 rounded-lg shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 text-lg"
-                  >
-                    {isSubmitting ? (
-                      <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> Đang xử lý...</>
-                    ) : (
-                      <><CheckCircle2 size={24} /> Xác Nhận Đăng Ký</>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          ) : (
-            /* --- PHIẾU DỰ THI --- */
-            <div className="space-y-4 sm:space-y-6">
-              <div className="bg-green-50 text-green-800 p-4 rounded-lg flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-3 border border-green-200 print:hidden shadow-sm">
-                <CheckCircle2 size={24} className="text-green-600 shrink-0"/>
-                <div>
-                  <h3 className="font-bold text-lg">Đăng ký thành công!</h3>
-                  <p className="text-sm mt-1">Hệ thống đã lưu dữ liệu. Vui lòng chụp màn hình hoặc in Phiếu Dự Thi bên dưới.</p>
-                </div>
-              </div>
-
-              {/* Bản in Phiếu */}
-              <div className="bg-white p-5 sm:p-8 rounded-xl shadow-2xl border border-gray-200 sm:border-2 sm:border-blue-100 max-w-2xl mx-auto relative print:shadow-none print:border-none print:p-0">
-                
-                {/* Watermark */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none overflow-hidden">
-                  <div className="text-4xl sm:text-6xl font-black transform -rotate-45 whitespace-nowrap">TÂM ĐỨC</div>
-                </div>
-
-                <div className="text-center border-b-2 border-gray-800 pb-4 sm:pb-6 mb-4 sm:mb-6 relative z-10">
-                  <h2 className="text-lg sm:text-2xl font-bold uppercase text-blue-800">Trung Tâm Luyện Thi Tâm Đức</h2>
-                  <h1 className="text-2xl sm:text-3xl font-black mt-1 sm:mt-2 text-red-600">PHIẾU DỰ THI</h1>
-                  <p className="font-semibold text-sm sm:text-base text-gray-600 mt-1">Kỳ thi thử Tuyển sinh vào lớp 10</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 sm:gap-y-4 text-base sm:text-lg relative z-10">
-                  <div className="col-span-1 md:col-span-2 flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
-                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Họ và tên thí sinh:</span>
-                    <span className="font-bold text-lg sm:text-xl uppercase text-blue-900 sm:text-gray-900">{ticketData.fullName}</span>
-                  </div>
-                  
-                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
-                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Ngày sinh:</span>
-                    <span className="font-bold">{new Date(ticketData.dob).toLocaleDateString('vi-VN')}</span>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
-                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Giới tính:</span>
-                    <span className="font-semibold">{ticketData.gender}</span>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
-                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Số điện thoại PH:</span>
-                    <span className="font-semibold">{ticketData.phone}</span>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
-                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Cơ sở đăng ký:</span>
-                    <span className="font-semibold text-blue-700">{ticketData.campus}</span>
-                  </div>
-                </div>
-
-                <div className="mt-6 sm:mt-8 bg-blue-50/50 sm:bg-blue-50 p-4 sm:p-6 rounded-lg border border-blue-100 sm:border-blue-200 relative z-10">
-                  <h3 className="text-center font-bold text-sm sm:text-base text-gray-700 mb-4 uppercase">Thông Tin Phân Phòng</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-center">
-                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-row sm:flex-col items-center sm:justify-center gap-4 sm:gap-1 text-left sm:text-center">
-                      <Hash className="text-blue-500 shrink-0" size={24}/>
-                      <div className="flex-1">
-                        <p className="text-xs text-gray-500 uppercase">Số báo danh</p>
-                        <p className="font-black text-xl sm:text-2xl text-blue-700 leading-tight">{ticketData.sbd}</p>
-                      </div>
-                    </div>
-                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-row sm:flex-col items-center sm:justify-center gap-4 sm:gap-1 text-left sm:text-center">
-                      <MapPin className="text-red-500 shrink-0" size={24}/>
-                      <div className="flex-1">
-                        <p className="text-xs text-gray-500 uppercase">Địa điểm thi</p>
-                        <p className="font-bold text-lg text-gray-800 leading-tight">{ticketData.examLocation}</p>
-                      </div>
-                    </div>
-                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-row sm:flex-col items-center sm:justify-center gap-4 sm:gap-1 text-left sm:text-center">
-                      <DoorOpen className="text-green-500 shrink-0" size={24}/>
-                      <div className="flex-1">
-                        <p className="text-xs text-gray-500 uppercase">Phòng thi</p>
-                        <p className="font-bold text-lg text-gray-800 leading-tight">{ticketData.room}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-between items-center sm:items-end gap-4 print:hidden relative z-10">
-                  <button 
-                    onClick={() => setTicketData(null)}
-                    className="text-blue-600 hover:text-blue-800 underline order-2 sm:order-1 text-sm sm:text-base py-2"
-                  >
-                    Đăng ký cho học sinh khác
-                  </button>
-                  <button 
-                    onClick={handlePrint}
-                    className="w-full sm:w-auto bg-gray-800 hover:bg-black text-white px-6 py-3.5 sm:py-2 rounded-lg shadow-md flex items-center justify-center gap-2 order-1 sm:order-2 text-lg sm:text-base font-semibold sm:font-normal"
-                  >
-                    <Printer size={18}/> {window.innerWidth < 640 ? "Lưu / In Phiếu Dự Thi" : "In Phiếu"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+    <!-- OVERLAY LOADING -->
+    <div id="loading-screen" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+        <i class="fa-solid fa-circle-notch fa-spin text-5xl text-royal mb-4"></i>
+        <p class="text-lg font-semibold text-slate-600 animate-pulse">Đang kết nối hệ thống...</p>
     </div>
-  );
-}
+
+    <!-- HEADER / BANNER -->
+    <header class="bg-blue-600 text-white shadow-lg print-hidden relative overflow-hidden">
+        <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(white 1px, transparent 1px); background-size: 20px 20px;"></div>
+        <div class="max-w-5xl mx-auto px-4 py-5 relative z-10">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
+                <div>
+                    <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-md">Hệ Thống Giáo Dục Tâm Đức</h1>
+                    <p class="text-blue-200 text-sm sm:text-base font-medium mt-1">Trung Tâm Luyện Thi Cấp 2 & 3</p>
+                </div>
+                
+                <!-- NAVIGATION TABS -->
+                <div class="flex flex-wrap justify-center sm:justify-end bg-black/20 p-1.5 rounded-full backdrop-blur-md border border-white/10 gap-1 w-full sm:w-auto">
+                    <button class="tab-active flex-1 sm:flex-none px-5 py-2.5 rounded-full transition-all flex items-center justify-center gap-2 text-sm sm:text-base font-semibold">
+                        <i class="fa-solid fa-user-plus"></i> Đăng Ký
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="max-w-4xl mx-auto mt-8 sm:mt-10 px-4">
+        
+        <!-- MÀN HÌNH FORM ĐĂNG KÝ -->
+        <section id="form-section" class="glass-card rounded-2xl p-6 sm:p-10 print-hidden relative">
+            <div class="text-center mb-10">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 text-royal mb-4">
+                    <i class="fa-solid fa-file-signature text-2xl"></i>
+                </div>
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-800 uppercase tracking-tight">Đăng Ký Thi Thử Vào Lớp 10</h2>
+                <p class="text-slate-500 mt-2 text-sm sm:text-base font-medium">Vui lòng điền thông tin chính xác để hệ thống tự động phân phòng thi</p>
+            </div>
+
+            <form id="registration-form" class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
+                    
+                    <!-- Họ Tên -->
+                    <div class="input-group">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Họ và Tên Học Sinh <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <input type="text" id="inp-fullname" required placeholder="VD: Nguyễn Văn A" class="input-field w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-royal focus:border-royal outline-none transition-all text-slate-700 font-medium placeholder-slate-400">
+                            <i class="fa-solid fa-user input-icon"></i>
+                        </div>
+                    </div>
+
+                    <!-- Ngày Sinh -->
+                    <div class="input-group">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Ngày Sinh <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <input type="date" id="inp-dob" required class="input-field w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-royal focus:border-royal outline-none transition-all text-slate-700 font-medium">
+                            <i class="fa-solid fa-calendar-day input-icon"></i>
+                        </div>
+                    </div>
+
+                    <!-- Giới Tính -->
+                    <div class="input-group">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Giới Tính <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <select id="inp-gender" class="input-field w-full pl-12 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-royal focus:border-royal outline-none transition-all text-slate-700 font-medium appearance-none">
+                                <option value="Nam">Nam</option>
+                                <option value="Nữ">Nữ</option>
+                            </select>
+                            <i class="fa-solid fa-venus-mars input-icon"></i>
+                            <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none text-sm"></i>
+                        </div>
+                    </div>
+
+                    <!-- SĐT -->
+                    <div class="input-group">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Số Điện Thoại Phụ Huynh <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <input type="tel" id="inp-phone" required pattern="[0-9]{10,11}" placeholder="VD: 0901234567" class="input-field w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-royal focus:border-royal outline-none transition-all text-slate-700 font-medium placeholder-slate-400">
+                            <i class="fa-solid fa-phone input-icon"></i>
+                        </div>
+                    </div>
+
+                    <!-- Cơ sở -->
+                    <div class="input-group md:col-span-2">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Cơ Sở Đang Học <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <select id="inp-campus" class="input-field w-full pl-12 pr-10 py-3.5 bg-blue-50/50 border border-blue-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-royal focus:border-royal outline-none transition-all text-blue-900 font-semibold appearance-none">
+                                <!-- Options will be injected by JS -->
+                            </select>
+                            <i class="fa-solid fa-building-columns input-icon text-blue-500"></i>
+                            <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 transform -translate-y-1/2 text-blue-400 pointer-events-none text-sm"></i>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-2 font-medium"><i class="fa-solid fa-circle-info mr-1 text-royal"></i> Hệ thống tự động phân địa điểm thi dựa trên cơ sở bạn chọn.</p>
+                    </div>
+
+                </div>
+
+                <div class="pt-8 border-t border-slate-100 mt-8">
+                    <button type="submit" id="btn-submit" class="btn-gradient w-full text-white font-bold py-4 px-6 rounded-xl text-lg flex justify-center items-center gap-3">
+                        <i class="fa-solid fa-paper-plane"></i> XÁC NHẬN ĐĂNG KÝ
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- MÀN HÌNH KẾT QUẢ / PHIẾU DỰ THI (Mặc định ẩn) -->
+        <section id="ticket-section" class="hidden space-y-6">
+            
+            <div class="bg-emerald-50 text-emerald-800 p-5 rounded-2xl flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-4 border border-emerald-200 print-hidden shadow-sm">
+                <div class="bg-emerald-100 p-2 rounded-full">
+                    <i class="fa-solid fa-circle-check text-2xl text-emerald-600"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg">Đăng ký thành công!</h3>
+                    <p class="text-sm mt-1 text-emerald-700 font-medium">Dữ liệu đã được lưu trữ. Vui lòng in phiếu hoặc chụp màn hình lại.</p>
+                </div>
+            </div>
+
+            <!-- Khung Phiếu In -->
+            <div class="glass-card ticket-border p-6 sm:p-10 rounded-2xl max-w-2xl mx-auto relative overflow-hidden bg-white">
+                
+                <!-- Watermark -->
+                <div class="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none overflow-hidden select-none">
+                    <div class="text-5xl sm:text-7xl font-black transform -rotate-45 whitespace-nowrap text-royal">TÂM ĐỨC</div>
+                </div>
+
+                <!-- Tiêu đề phiếu -->
+                <div class="text-center border-b-2 border-slate-800 pb-5 sm:pb-6 mb-5 sm:mb-6 relative z-10">
+                    <h2 class="text-lg sm:text-xl font-bold uppercase text-royal tracking-wide">Trung Tâm Luyện Thi Tâm Đức</h2>
+                    <h1 class="text-3xl sm:text-4xl font-black mt-2 text-red-600 tracking-tight">PHIẾU DỰ THI</h1>
+                    <p class="font-semibold text-sm sm:text-base text-slate-500 mt-2">Kỳ thi thử Tuyển sinh vào lớp 10</p>
+                </div>
+
+                <!-- Thông tin thí sinh -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-base sm:text-lg relative z-10 font-medium">
+                    <div class="col-span-1 md:col-span-2 flex flex-col sm:flex-row sm:justify-between border-b border-slate-100 pb-3">
+                        <span class="text-slate-500 text-sm sm:text-base">Họ và tên thí sinh:</span>
+                        <span id="tk-fullname" class="font-bold text-xl uppercase text-slate-900 mt-1 sm:mt-0">...</span>
+                    </div>
+                    
+                    <div class="flex flex-col sm:flex-row sm:justify-between border-b border-slate-100 pb-3">
+                        <span class="text-slate-500 text-sm sm:text-base">Ngày sinh:</span>
+                        <span id="tk-dob" class="font-bold text-slate-800 mt-1 sm:mt-0">...</span>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:justify-between border-b border-slate-100 pb-3">
+                        <span class="text-slate-500 text-sm sm:text-base">Giới tính:</span>
+                        <span id="tk-gender" class="font-bold text-slate-800 mt-1 sm:mt-0">...</span>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:justify-between border-b border-slate-100 pb-3">
+                        <span class="text-slate-500 text-sm sm:text-base">Số điện thoại PH:</span>
+                        <span id="tk-phone" class="font-bold text-slate-800 mt-1 sm:mt-0">...</span>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:justify-between border-b border-slate-100 pb-3">
+                        <span class="text-slate-500 text-sm sm:text-base">Cơ sở đăng ký:</span>
+                        <span id="tk-campus" class="font-bold text-royal mt-1 sm:mt-0">...</span>
+                    </div>
+                </div>
+
+                <!-- Khung phân phòng -->
+                <div class="mt-8 bg-gradient-to-br from-blue-50 to-indigo-50 p-5 sm:p-6 rounded-xl border border-blue-100 relative z-10 shadow-inner">
+                    <h3 class="text-center font-bold text-xs sm:text-sm text-slate-500 mb-4 uppercase tracking-widest">Thông Tin Phân Phòng</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-center">
+                        
+                        <!-- SBD -->
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-100 flex flex-row sm:flex-col items-center justify-start sm:justify-center gap-4 sm:gap-2">
+                            <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-hashtag text-royal text-lg"></i>
+                            </div>
+                            <div class="flex-1 text-left sm:text-center">
+                                <p class="text-[11px] text-slate-400 uppercase font-bold tracking-wider">Số báo danh</p>
+                                <p id="tk-sbd" class="font-black text-2xl text-royal leading-tight tracking-tight">...</p>
+                            </div>
+                        </div>
+
+                        <!-- Địa điểm -->
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-100 flex flex-row sm:flex-col items-center justify-start sm:justify-center gap-4 sm:gap-2">
+                            <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-location-dot text-red-500 text-lg"></i>
+                            </div>
+                            <div class="flex-1 text-left sm:text-center">
+                                <p class="text-[11px] text-slate-400 uppercase font-bold tracking-wider">Địa điểm thi</p>
+                                <p id="tk-location" class="font-bold text-lg text-slate-800 leading-tight">...</p>
+                            </div>
+                        </div>
+
+                        <!-- Phòng -->
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-100 flex flex-row sm:flex-col items-center justify-start sm:justify-center gap-4 sm:gap-2">
+                            <div class="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-door-open text-emerald-600 text-lg"></i>
+                            </div>
+                            <div class="flex-1 text-left sm:text-center">
+                                <p class="text-[11px] text-slate-400 uppercase font-bold tracking-wider">Phòng thi</p>
+                                <p id="tk-room" class="font-bold text-lg text-slate-800 leading-tight">...</p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 print-hidden relative z-10">
+                    <button id="btn-back" class="text-slate-500 hover:text-royal font-medium text-sm sm:text-base py-2 transition-colors flex items-center gap-2 order-2 sm:order-1">
+                        <i class="fa-solid fa-arrow-left"></i> Đăng ký người khác
+                    </button>
+                    <button id="btn-print" class="w-full sm:w-auto bg-slate-800 hover:bg-black text-white px-8 py-3.5 sm:py-3 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 order-1 sm:order-2 font-bold">
+                        <i class="fa-solid fa-print"></i> LƯU / IN PHIẾU
+                    </button>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FIREBASE & JAVASCRIPT LOGIC -->
+    <script type="module">
+        // Import Firebase V10 Modular SDK via CDN
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        // --- CẤU HÌNH LIÊN KẾT ---
+        const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/your-sheet-id/edit";
+        const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9jVA5QEf_-RswEGenlu6FdYhd3mpzIKnWzuUVzPWuftewJVL16sHx1gwOomWu5xjU/exec"; 
+
+        const CAMPUSES = [
+            "Biệt Thự Dĩ An",
+            "Nguyễn Văn Siêu",
+            "Tân Đông Hiệp B",
+            "Bình An",
+            "Đông Hòa",
+            "Lê Hồng Phong",
+            "Không Học Tại Tâm Đức"
+        ];
+
+        // Render Select Options
+        const campusSelect = document.getElementById('inp-campus');
+        CAMPUSES.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = c;
+            campusSelect.appendChild(opt);
+        });
+
+        // --- FIREBASE INIT ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tam-duc-mock-exam';
+        
+        let app, auth, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch(e) {
+            console.error("Firebase init error", e);
+        }
+
+        // --- STATE & DOM ELEMENTS ---
+        let currentUser = null;
+        let registrationsList = [];
+
+        const ui = {
+            loading: document.getElementById('loading-screen'),
+            formSection: document.getElementById('form-section'),
+            ticketSection: document.getElementById('ticket-section'),
+            form: document.getElementById('registration-form'),
+            btnSubmit: document.getElementById('btn-submit'),
+            btnPrint: document.getElementById('btn-print'),
+            btnBack: document.getElementById('btn-back')
+        };
+
+        // Hàm ẩn Loading
+        const hideLoading = () => {
+            ui.loading.style.opacity = '0';
+            setTimeout(() => ui.loading.classList.add('hidden'), 300);
+        };
+
+        // --- AUTHENTICATION ---
+        const initAuth = async () => {
+            if(!auth) { hideLoading(); return; }
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth error:", error);
+                hideLoading();
+            }
+        };
+
+        if(auth) {
+            onAuthStateChanged(auth, (user) => {
+                currentUser = user;
+                if (user) {
+                    fetchRegistrations();
+                } else {
+                    hideLoading();
+                }
+            });
+            initAuth();
+        } else {
+            hideLoading();
+        }
+
+        // --- FETCH DATA LIST ---
+        const fetchRegistrations = () => {
+            const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
+            onSnapshot(regsRef, (snapshot) => {
+                const data = [];
+                snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                // Sort by time
+                data.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+                registrationsList = data;
+                hideLoading();
+            }, (err) => {
+                console.error("Lỗi lấy dữ liệu:", err);
+                hideLoading();
+            });
+        };
+
+        // --- LOGIC XỬ LÝ SỐ BÁO DANH & PHÒNG ---
+        const getExamLocation = (campus) => {
+            if (["Biệt Thự Dĩ An", "Nguyễn Văn Siêu", "Lê Hồng Phong", "Không Học Tại Tâm Đức"].includes(campus)) return "Khu Biệt Thự";
+            if (campus === "Tân Đông Hiệp B") return "Tân Đông Hiệp B";
+            if (["Bình An", "Đông Hòa"].includes(campus)) return "Bình An";
+            return "Cơ sở Biệt Thự";
+        };
+
+        const generateSBD = (dobString) => {
+            const dateObj = new Date(dobString);
+            const dd = String(dateObj.getDate()).padStart(2, '0');
+            const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const prefix = `${dd}${mm}`;
+
+            const sameDob = registrationsList.filter(r => r.sbd && r.sbd.startsWith(prefix));
+            const sequence = sameDob.length + 1;
+            const seqString = String(sequence).padStart(3, '0');
+            
+            return `${prefix}${seqString}`;
+        };
+
+        const calculateRoom = (location) => {
+            const studentsAtLoc = registrationsList.filter(r => r.examLocation === location);
+            const count = studentsAtLoc.length;
+            const roomNumber = Math.floor(count / 20) + 1;
+            return `Phòng ${String(roomNumber).padStart(2, '0')}`;
+        };
+
+        // --- SUBMIT EVENT ---
+        ui.form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser || !db) {
+                alert("Hệ thống chưa kết nối dữ liệu. Vui lòng thử lại sau.");
+                return;
+            }
+
+            // Đổi trạng thái nút
+            const originalBtnContent = ui.btnSubmit.innerHTML;
+            ui.btnSubmit.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> ĐANG XỬ LÝ...`;
+            ui.btnSubmit.disabled = true;
+            ui.btnSubmit.classList.add('opacity-75', 'cursor-not-allowed');
+
+            try {
+                const formData = {
+                    fullName: document.getElementById('inp-fullname').value.trim(),
+                    dob: document.getElementById('inp-dob').value,
+                    gender: document.getElementById('inp-gender').value,
+                    phone: document.getElementById('inp-phone').value.trim(),
+                    campus: document.getElementById('inp-campus').value
+                };
+
+                const examLocation = getExamLocation(formData.campus);
+                const sbd = generateSBD(formData.dob);
+                const room = calculateRoom(examLocation);
+
+                const newReg = {
+                    ...formData,
+                    examLocation, sbd, room,
+                    createdAt: serverTimestamp(),
+                    userId: currentUser.uid
+                };
+
+                // Lưu vào Firestore
+                const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
+                await addDoc(regsRef, newReg);
+
+                // Gửi Webhook tới Google Sheets
+                if (GOOGLE_APPS_SCRIPT_URL) {
+                    try {
+                        const sheetData = new URLSearchParams();
+                        sheetData.append("fullName", newReg.fullName);
+                        sheetData.append("dob", newReg.dob);
+                        sheetData.append("gender", newReg.gender);
+                        sheetData.append("phone", `'${newReg.phone}`);
+                        sheetData.append("campus", newReg.campus);
+                        sheetData.append("sbd", `'${newReg.sbd}`);
+                        sheetData.append("examLocation", newReg.examLocation);
+                        sheetData.append("room", newReg.room);
+                        sheetData.append("createdAt", new Date().toLocaleString('vi-VN'));
+
+                        fetch(GOOGLE_APPS_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: sheetData })
+                            .catch(err => console.log("Webhook sync background error", err));
+                    } catch(err) {}
+                }
+
+                // Hiển thị Phiếu
+                showTicket(newReg);
+                ui.form.reset();
+
+            } catch (error) {
+                console.error(error);
+                alert("Có lỗi xảy ra khi lưu! Vui lòng thử lại.");
+            } finally {
+                // Khôi phục nút
+                ui.btnSubmit.innerHTML = originalBtnContent;
+                ui.btnSubmit.disabled = false;
+                ui.btnSubmit.classList.remove('opacity-75', 'cursor-not-allowed');
+            }
+        });
+
+        // --- CẬP NHẬT GIAO DIỆN PHIẾU ---
+        const showTicket = (data) => {
+            // Định dạng ngày hiển thị dd/mm/yyyy
+            const dStr = data.dob.split('-');
+            const displayDob = dStr.length === 3 ? `${dStr[2]}/${dStr[1]}/${dStr[0]}` : data.dob;
+
+            document.getElementById('tk-fullname').textContent = data.fullName;
+            document.getElementById('tk-dob').textContent = displayDob;
+            document.getElementById('tk-gender').textContent = data.gender;
+            document.getElementById('tk-phone').textContent = data.phone;
+            document.getElementById('tk-campus').textContent = data.campus;
+            document.getElementById('tk-sbd').textContent = data.sbd;
+            document.getElementById('tk-location').textContent = data.examLocation;
+            document.getElementById('tk-room').textContent = data.room;
+
+            // Chuyển màn hình với hiệu ứng Fade
+            ui.formSection.classList.add('hidden');
+            ui.ticketSection.classList.remove('hidden');
+            
+            // Cuộn lên đầu
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        // --- CÁC NÚT TƯƠNG TÁC KHÁC ---
+        ui.btnBack.addEventListener('click', () => {
+            ui.ticketSection.classList.add('hidden');
+            ui.formSection.classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        ui.btnPrint.addEventListener('click', () => {
+            window.print();
+        });
+
+    </script>
+</body>
+</html>
