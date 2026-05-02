@@ -1,0 +1,420 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { Printer, UserPlus, CheckCircle2, MapPin, Calendar, Hash, DoorOpen, Phone, User, Building, LayoutList, ExternalLink } from 'lucide-react';
+
+// --- CẤU HÌNH FIREBASE ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'tam-duc-mock-exam';
+
+// --- DANH MỤC CƠ SỞ & LOGIC ĐỊA ĐIỂM ---
+const CAMPUSES = [
+  "Biệt Thự Dĩ An",
+  "Nguyễn Văn Siêu",
+  "Tân Đông Hiệp B",
+  "Bình An",
+  "Đông Hòa",
+  "Lê Hồng Phong",
+  "Không Học Tại Tâm Đức"
+];
+
+// Logic xác định địa điểm thi dựa trên cơ sở đang học
+const getExamLocation = (campus) => {
+  if (["Biệt Thự Dĩ An", "Nguyễn Văn Siêu", "Lê Hồng Phong", "Không Học Tại Tâm Đức"].includes(campus)) {
+    return "Khu Biệt Thự"; // Gán học sinh không học tại TT và các cơ sở này về Khu Biệt Thự
+  }
+  if (["Tân Đông Hiệp B"].includes(campus)) {
+    return "Tân Đông Hiệp B";
+  }
+  if (["Bình An", "Đông Hòa"].includes(campus)) {
+    return "Bình An";
+  }
+  return "Khu Biệt Thự"; // Mặc định
+};
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [registrations, setRegistrations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  // 1. LINK GOOGLE SHEET (Dành cho nút bấm xem danh sách trên menu)
+  const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/your-sheet-id/edit";
+  
+  // 2. LINK GOOGLE APPS SCRIPT (Dành để tự động đổ dữ liệu về sheet sau khi đăng ký)
+  const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyZSyup7v_0WEFEoVDGiNQovtkBbv5jQbceW6c4We4uSrQwNXdRg0KzcQe01jF3HHma/exec"; 
+  
+  // Form State
+  const [formData, setFormData] = useState({
+    fullName: '',
+    dob: '',
+    gender: 'Nam',
+    phone: '',
+    campus: CAMPUSES[0]
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [ticketData, setTicketData] = useState(null);
+
+  // 1. Khởi tạo Auth
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Auth error:", error);
+      }
+    };
+    initAuth();
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Lấy dữ liệu đăng ký để tính toán SBD và Phòng thi
+  useEffect(() => {
+    if (!user) return;
+
+    const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
+    
+    const unsubscribe = onSnapshot(regsRef, (snapshot) => {
+      const data = [];
+      snapshot.forEach((doc) => {
+        data.push({ id: doc.id, ...doc.data() });
+      });
+      // Sắp xếp theo thời gian đăng ký
+      data.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+      setRegistrations(data);
+      setLoading(false);
+    }, (error) => {
+      console.error("Lỗi lấy dữ liệu:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // --- LOGIC XỬ LÝ ĐĂNG KÝ ---
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const generateSBD = (dobString) => {
+    const dateObj = new Date(dobString);
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const prefix = `${dd}${mm}`;
+
+    const sameDobStudents = registrations.filter(r => r.sbd && r.sbd.startsWith(prefix));
+    const sequence = sameDobStudents.length + 1;
+    
+    const seqString = String(sequence).padStart(3, '0');
+    return `${prefix}${seqString}`;
+  };
+
+  const calculateRoom = (location) => {
+    const studentsAtLocation = registrations.filter(r => r.examLocation === location);
+    const currentCount = studentsAtLocation.length;
+    const roomNumber = Math.floor(currentCount / 20) + 1;
+    return `Phòng ${String(roomNumber).padStart(2, '0')}`;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    setIsSubmitting(true);
+
+    try {
+      const examLocation = getExamLocation(formData.campus);
+      const sbd = generateSBD(formData.dob);
+      const room = calculateRoom(examLocation);
+
+      const newRegistration = {
+        ...formData,
+        examLocation,
+        sbd,
+        room,
+        createdAt: serverTimestamp(),
+        userId: user.uid
+      };
+
+      const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
+      await addDoc(regsRef, newRegistration);
+
+      if (GOOGLE_APPS_SCRIPT_URL) {
+        try {
+          const sheetData = new URLSearchParams();
+          sheetData.append("fullName", newRegistration.fullName);
+          sheetData.append("dob", newRegistration.dob);
+          sheetData.append("gender", newRegistration.gender);
+          sheetData.append("phone", `'${newRegistration.phone}`);
+          sheetData.append("campus", newRegistration.campus);
+          sheetData.append("sbd", `'${newRegistration.sbd}`);
+          sheetData.append("examLocation", newRegistration.examLocation);
+          sheetData.append("room", newRegistration.room);
+          sheetData.append("createdAt", new Date().toLocaleString('vi-VN'));
+
+          fetch(GOOGLE_APPS_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: sheetData
+          }).catch(err => console.error("Lỗi kết nối WebApp:", err));
+        } catch (err) {
+          console.error("Lỗi chuẩn bị dữ liệu Sheet:", err);
+        }
+      }
+
+      setTicketData(newRegistration);
+      setFormData({
+        fullName: '',
+        dob: '',
+        gender: 'Nam',
+        phone: '',
+        campus: CAMPUSES[0]
+      });
+    } catch (error) {
+      console.error("Lỗi khi đăng ký:", error);
+      alert("Có lỗi xảy ra, vui lòng thử lại!");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 pb-12">
+      {/* Header */}
+      <div className="bg-blue-700 text-white p-4 shadow-md print:hidden">
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold">Hệ Thống Giáo Dục Tâm Đức</h1>
+            <p className="text-blue-100 text-sm">Trung Tâm Luyện Thi Tâm Đức - Cấp 2</p>
+          </div>
+          <div className="flex flex-wrap justify-center sm:justify-end bg-blue-800 rounded-lg p-1 gap-1 w-full sm:w-auto">
+            <button 
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md transition flex items-center justify-center gap-2 bg-white text-blue-700 font-semibold shadow text-sm sm:text-base"
+            >
+              <UserPlus size={18} /> Đăng Ký
+            </button>
+            <a 
+              href={GOOGLE_SHEET_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md transition flex items-center justify-center gap-2 text-blue-100 hover:bg-blue-600 text-sm sm:text-base"
+              title="Mở bảng tính Google Sheets"
+            >
+              <LayoutList size={18} /> Danh Sách <ExternalLink size={14} className="hidden sm:block" />
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto mt-6 sm:mt-8 px-3 sm:px-4">
+        <div className="space-y-6 sm:space-y-8">
+          {!ticketData ? (
+            <div className="bg-white p-5 sm:p-6 md:p-8 rounded-xl shadow-lg border border-gray-100 print:hidden">
+              <div className="text-center mb-6 sm:mb-8">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-800 uppercase text-blue-700">Đăng Ký Thi Thử Tuyển Sinh 10</h2>
+                <p className="text-gray-500 mt-2 text-sm sm:text-base">Vui lòng điền thông tin chính xác để hệ thống xếp phòng tự động</p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
+                  {/* Họ và tên */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                      <User size={16} className="text-blue-500"/> Họ và Tên Học Sinh
+                    </label>
+                    <input 
+                      type="text" required name="fullName"
+                      value={formData.fullName} onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                      placeholder="VD: Nguyễn Văn A"
+                    />
+                  </div>
+
+                  {/* Ngày sinh */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                      <Calendar size={16} className="text-blue-500"/> Ngày Sinh
+                    </label>
+                    <input 
+                      type="date" required name="dob"
+                      value={formData.dob} onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                    />
+                  </div>
+
+                  {/* Giới tính */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                      <User size={16} className="text-blue-500"/> Giới Tính
+                    </label>
+                    <select 
+                      name="gender" value={formData.gender} onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                    >
+                      <option value="Nam">Nam</option>
+                      <option value="Nữ">Nữ</option>
+                    </select>
+                  </div>
+
+                  {/* Số điện thoại */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                      <Phone size={16} className="text-blue-500"/> Số Điện Thoại Phụ Huynh
+                    </label>
+                    <input 
+                      type="tel" required name="phone" pattern="[0-9]{10,11}"
+                      value={formData.phone} onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                      placeholder="VD: 0901234567"
+                    />
+                  </div>
+
+                  {/* Cơ sở đang học */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                      <Building size={16} className="text-blue-500"/> Cơ Sở Đang Học
+                    </label>
+                    <select 
+                      name="campus" value={formData.campus} onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition bg-blue-50"
+                    >
+                      {CAMPUSES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-2 italic">* Hệ thống sẽ tự động xếp địa điểm thi dựa trên cơ sở bạn chọn.</p>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-100">
+                  <button 
+                    type="submit" disabled={isSubmitting}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 sm:py-3 px-4 rounded-lg shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 text-lg"
+                  >
+                    {isSubmitting ? (
+                      <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> Đang xử lý...</>
+                    ) : (
+                      <><CheckCircle2 size={24} /> Xác Nhận Đăng Ký</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            /* --- PHIẾU DỰ THI --- */
+            <div className="space-y-4 sm:space-y-6">
+              <div className="bg-green-50 text-green-800 p-4 rounded-lg flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-3 border border-green-200 print:hidden shadow-sm">
+                <CheckCircle2 size={24} className="text-green-600 shrink-0"/>
+                <div>
+                  <h3 className="font-bold text-lg">Đăng ký thành công!</h3>
+                  <p className="text-sm mt-1">Hệ thống đã lưu dữ liệu. Vui lòng chụp màn hình hoặc in Phiếu Dự Thi bên dưới.</p>
+                </div>
+              </div>
+
+              {/* Bản in Phiếu */}
+              <div className="bg-white p-5 sm:p-8 rounded-xl shadow-2xl border border-gray-200 sm:border-2 sm:border-blue-100 max-w-2xl mx-auto relative print:shadow-none print:border-none print:p-0">
+                
+                {/* Watermark */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none overflow-hidden">
+                  <div className="text-4xl sm:text-6xl font-black transform -rotate-45 whitespace-nowrap">TÂM ĐỨC</div>
+                </div>
+
+                <div className="text-center border-b-2 border-gray-800 pb-4 sm:pb-6 mb-4 sm:mb-6 relative z-10">
+                  <h2 className="text-lg sm:text-2xl font-bold uppercase text-blue-800">Trung Tâm Luyện Thi Tâm Đức</h2>
+                  <h1 className="text-2xl sm:text-3xl font-black mt-1 sm:mt-2 text-red-600">PHIẾU DỰ THI</h1>
+                  <p className="font-semibold text-sm sm:text-base text-gray-600 mt-1">Kỳ thi thử Tuyển sinh vào lớp 10</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 sm:gap-y-4 text-base sm:text-lg relative z-10">
+                  <div className="col-span-1 md:col-span-2 flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
+                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Họ và tên thí sinh:</span>
+                    <span className="font-bold text-lg sm:text-xl uppercase text-blue-900 sm:text-gray-900">{ticketData.fullName}</span>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
+                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Ngày sinh:</span>
+                    <span className="font-bold">{new Date(ticketData.dob).toLocaleDateString('vi-VN')}</span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
+                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Giới tính:</span>
+                    <span className="font-semibold">{ticketData.gender}</span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
+                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Số điện thoại PH:</span>
+                    <span className="font-semibold">{ticketData.phone}</span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:justify-between border-b border-gray-100 sm:border-gray-200 pb-2">
+                    <span className="text-gray-500 sm:text-gray-600 text-sm sm:text-base">Cơ sở đăng ký:</span>
+                    <span className="font-semibold text-blue-700">{ticketData.campus}</span>
+                  </div>
+                </div>
+
+                <div className="mt-6 sm:mt-8 bg-blue-50/50 sm:bg-blue-50 p-4 sm:p-6 rounded-lg border border-blue-100 sm:border-blue-200 relative z-10">
+                  <h3 className="text-center font-bold text-sm sm:text-base text-gray-700 mb-4 uppercase">Thông Tin Phân Phòng</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-center">
+                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-row sm:flex-col items-center sm:justify-center gap-4 sm:gap-1 text-left sm:text-center">
+                      <Hash className="text-blue-500 shrink-0" size={24}/>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500 uppercase">Số báo danh</p>
+                        <p className="font-black text-xl sm:text-2xl text-blue-700 leading-tight">{ticketData.sbd}</p>
+                      </div>
+                    </div>
+                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-row sm:flex-col items-center sm:justify-center gap-4 sm:gap-1 text-left sm:text-center">
+                      <MapPin className="text-red-500 shrink-0" size={24}/>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500 uppercase">Địa điểm thi</p>
+                        <p className="font-bold text-lg text-gray-800 leading-tight">{ticketData.examLocation}</p>
+                      </div>
+                    </div>
+                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-row sm:flex-col items-center sm:justify-center gap-4 sm:gap-1 text-left sm:text-center">
+                      <DoorOpen className="text-green-500 shrink-0" size={24}/>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500 uppercase">Phòng thi</p>
+                        <p className="font-bold text-lg text-gray-800 leading-tight">{ticketData.room}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-between items-center sm:items-end gap-4 print:hidden relative z-10">
+                  <button 
+                    onClick={() => setTicketData(null)}
+                    className="text-blue-600 hover:text-blue-800 underline order-2 sm:order-1 text-sm sm:text-base py-2"
+                  >
+                    Đăng ký cho học sinh khác
+                  </button>
+                  <button 
+                    onClick={handlePrint}
+                    className="w-full sm:w-auto bg-gray-800 hover:bg-black text-white px-6 py-3.5 sm:py-2 rounded-lg shadow-md flex items-center justify-center gap-2 order-1 sm:order-2 text-lg sm:text-base font-semibold sm:font-normal"
+                  >
+                    <Printer size={18}/> {window.innerWidth < 640 ? "Lưu / In Phiếu Dự Thi" : "In Phiếu"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
