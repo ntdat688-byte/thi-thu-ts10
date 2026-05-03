@@ -151,6 +151,17 @@
 
         <!-- KẾT QUẢ PHIẾU DỰ THI (Mặc định ẩn) -->
         <section id="ticket-section" class="hidden space-y-4">
+
+            <!-- Thông báo nhắc nộp lệ phí (Sẽ tự động ẩn đi nếu đã thanh toán) -->
+            <div id="payment-alert" class="bg-amber-50 text-amber-800 p-3 sm:p-4 rounded-xl flex items-center gap-3 border border-amber-200 print-hidden shadow-sm hidden">
+                <div class="bg-amber-100 p-1.5 sm:p-2 rounded-full shrink-0">
+                    <i class="fa-solid fa-clock text-xl sm:text-2xl text-amber-600"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-sm sm:text-base leading-tight">Chưa đóng lệ phí!</h3>
+                    <p class="text-xs sm:text-sm mt-0.5 text-amber-700 font-medium">Vui lòng thanh toán lệ phí thi để được nhận Số báo danh và Phòng thi.</p>
+                </div>
+            </div>
             
             <div class="glass-card ticket-border p-4 sm:p-8 rounded-xl sm:rounded-2xl max-w-xl mx-auto relative overflow-hidden bg-white shadow-lg">
                 <!-- Watermark -->
@@ -253,7 +264,8 @@
             searchForm: document.getElementById('search-form'),
             btnSearch: document.getElementById('btn-search'),
             btnPrint: document.getElementById('btn-print'),
-            btnBack: document.getElementById('btn-back')
+            btnBack: document.getElementById('btn-back'),
+            paymentAlert: document.getElementById('payment-alert')
         };
 
         const fetchCSVData = async () => {
@@ -366,17 +378,30 @@
             document.getElementById('tk-gender').textContent = data.gender;
             document.getElementById('tk-phone').textContent = data.phone;
             document.getElementById('tk-campus').textContent = data.campus;
-            document.getElementById('tk-sbd').textContent = data.sbd;
             document.getElementById('tk-location').textContent = data.examLocation;
-            document.getElementById('tk-room').textContent = data.room;
 
             const paymentStatus = document.getElementById('tk-payment-status');
+            const sbdElement = document.getElementById('tk-sbd');
+            const roomElement = document.getElementById('tk-room');
+
             if (data.isPaid) {
                 paymentStatus.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Đã đóng lệ phí';
                 paymentStatus.className = "font-bold text-[11px] sm:text-xs px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-700 ml-auto whitespace-nowrap shadow-sm";
+                
+                sbdElement.textContent = data.sbd;
+                sbdElement.className = 'font-black text-sm sm:text-xl text-royal leading-tight tracking-tight';
+                roomElement.textContent = data.room;
+                
+                ui.paymentAlert.classList.add('hidden');
             } else {
                 paymentStatus.innerHTML = 'Chưa đóng';
                 paymentStatus.className = "font-bold text-[11px] sm:text-xs px-2.5 py-1 rounded-md bg-slate-100 text-slate-500 ml-auto whitespace-nowrap";
+                
+                sbdElement.textContent = 'Đang cập nhật';
+                sbdElement.className = 'font-bold text-[10px] sm:text-[13px] text-amber-600 leading-tight tracking-tight mt-1';
+                roomElement.textContent = '...';
+
+                ui.paymentAlert.classList.remove('hidden');
             }
 
             ui.searchSection.classList.add('hidden');
