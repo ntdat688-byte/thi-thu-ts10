@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tra Cứu Khảo Thí Tâm Đức</title>
+    <title>Hệ Thống Khảo Thí Tâm Đức</title>
 
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,7 +30,6 @@
         }
     </script>
 
-    <!-- Custom CSS cho Hiệu ứng -->
     <style>
         body {
             background-color: #f0f4f8;
@@ -75,6 +74,32 @@
             background: linear-gradient(135deg, #4338ca, #1d4ed8);
         }
 
+        /* Toast Notification CSS */
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1000;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s, visibility 0.3s;
+        }
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+        .toast-error { background-color: #ef4444; }
+        .toast-success { background-color: #10b981; }
+
         @media print {
             body { background: white !important; }
             .print-hidden { display: none !important; }
@@ -94,49 +119,48 @@
 <body class="text-slate-800 antialiased min-h-screen pb-12">
 
     <!-- OVERLAY LOADING -->
-    <div id="loading-screen" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+    <div id="loading-screen" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center transition-opacity duration-300">
         <i class="fa-solid fa-circle-notch fa-spin text-5xl text-indigo-600 mb-4"></i>
         <p class="text-lg font-semibold text-slate-600 animate-pulse">Đang tải dữ liệu...</p>
+    </div>
+
+    <!-- CUSTOM TOAST NOTIFICATION -->
+    <div id="toast" class="toast font-medium flex items-center gap-3">
+        <i id="toast-icon" class="fa-solid"></i>
+        <span id="toast-msg">Thông báo</span>
     </div>
 
     <!-- HEADER -->
     <header class="bg-blue-600 text-white shadow-lg print-hidden relative overflow-hidden">
         <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(white 1px, transparent 1px); background-size: 20px 20px;"></div>
-        <div class="max-w-5xl mx-auto px-4 py-5 relative z-10">
+        <div class="max-w-5xl mx-auto px-4 py-6 relative z-10">
             <div class="text-center">
                 <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-md">Hệ Thống Giáo Dục Tâm Đức</h1>
-                <p class="text-blue-200 text-sm sm:text-base font-medium mt-1">Trung Tâm Luyện Thi Cấp 2 & 3</p>
+                <p class="text-blue-200 text-sm sm:text-base font-medium mt-1">Kỳ Thi Thử Tuyển Sinh Lớp 10</p>
             </div>
         </div>
     </header>
 
     <main class="max-w-4xl mx-auto mt-6 sm:mt-10 px-3 sm:px-4">
         
-        <!-- NÚT VỀ TRANG ĐĂNG KÝ -->
-        <div class="flex justify-center mb-6 print-hidden">
-            <a href="index.html" class="px-6 py-2.5 rounded-full bg-slate-200/70 hover:bg-slate-300 text-slate-600 font-bold text-sm sm:text-base transition-all flex items-center gap-2 shadow-sm inline-flex">
-                <i class="fa-solid fa-pen-to-square"></i> Trở về trang Đăng ký mới
-            </a>
-        </div>
-
         <!-- MÀN HÌNH TRA CỨU -->
         <section id="search-section" class="glass-card rounded-2xl p-5 sm:p-10 print-hidden relative">
-            <div class="text-center mb-8 sm:mb-10">
+            <div class="text-center mb-8">
                 <div class="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-indigo-100 text-indigo-600 mb-3 sm:mb-4">
                     <i class="fa-solid fa-magnifying-glass text-xl sm:text-2xl"></i>
                 </div>
-                <h2 class="text-xl sm:text-3xl font-extrabold text-slate-800 uppercase tracking-tight">Tra Cứu Phiếu Dự Thi</h2>
-                <p class="text-slate-500 mt-2 text-xs sm:text-base font-medium">Nhập số điện thoại đã đăng ký để xem lại phiếu dự thi và tình trạng lệ phí</p>
+                <h2 class="text-xl sm:text-3xl font-extrabold text-slate-800 uppercase tracking-tight">Tra Cứu Thông Tin</h2>
+                <p class="text-slate-500 mt-2 text-xs sm:text-base font-medium">Nhập SĐT phụ huynh hoặc Số Báo Danh (SBD) để tra cứu</p>
             </div>
 
             <form id="search-form" class="space-y-5 sm:space-y-6 max-w-md mx-auto">
-                <div class="grid grid-cols-1 gap-5 sm:gap-8">
-                    <!-- SĐT Tra Cứu -->
+                <div class="grid grid-cols-1 gap-5">
+                    <!-- Ô Nhập Liệu Chung -->
                     <div class="input-group">
-                        <label class="block text-sm font-bold text-slate-700 mb-1.5 sm:mb-2">SĐT Đã Đăng Ký <span class="text-red-500">*</span></label>
+                        <label class="block text-sm font-bold text-slate-700 mb-1.5">SĐT hoặc SBD <span class="text-red-500">*</span></label>
                         <div class="relative">
-                            <input type="tel" id="search-phone" required pattern="[0-9]{10,11}" placeholder="VD: 0901234567" class="input-field input-field-indigo w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-700 font-medium placeholder-slate-400">
-                            <i class="fa-solid fa-phone input-icon"></i>
+                            <input type="text" id="search-input" required placeholder="VD: 0901234567 hoặc 3004001" class="input-field input-field-indigo w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-700 font-medium placeholder-slate-400">
+                            <i class="fa-solid fa-keyboard input-icon"></i>
                         </div>
                     </div>
                 </div>
@@ -149,10 +173,10 @@
             </form>
         </section>
 
-        <!-- KẾT QUẢ PHIẾU DỰ THI (Mặc định ẩn) -->
+        <!-- KẾT QUẢ PHIẾU DỰ THI & ĐIỂM (Mặc định ẩn) -->
         <section id="ticket-section" class="hidden space-y-4">
 
-            <!-- Thông báo nhắc nộp lệ phí (Sẽ tự động ẩn đi nếu đã thanh toán) -->
+            <!-- Cảnh báo chưa thanh toán -->
             <div id="payment-alert" class="bg-amber-50 text-amber-800 p-3 sm:p-4 rounded-xl flex items-center gap-3 border border-amber-200 print-hidden shadow-sm hidden">
                 <div class="bg-amber-100 p-1.5 sm:p-2 rounded-full shrink-0">
                     <i class="fa-solid fa-clock text-xl sm:text-2xl text-amber-600"></i>
@@ -171,10 +195,11 @@
 
                 <div class="text-center border-b border-slate-300 pb-3 sm:pb-4 mb-3 sm:mb-4 relative z-10">
                     <h2 class="text-[13px] sm:text-base font-bold uppercase text-royal tracking-wide">Trung Tâm Luyện Thi Tâm Đức</h2>
-                    <h1 class="text-2xl sm:text-3xl font-black mt-0.5 sm:mt-1 text-red-600 tracking-tight">PHIẾU DỰ THI</h1>
-                    <p class="font-semibold text-[11px] sm:text-sm text-slate-500 mt-0.5">Kỳ thi thử Tuyển sinh vào lớp 10</p>
+                    <h1 class="text-2xl sm:text-3xl font-black mt-0.5 sm:mt-1 text-red-600 tracking-tight">KẾT QUẢ KHẢO THÍ</h1>
+                    <p class="font-semibold text-[11px] sm:text-sm text-slate-500 mt-0.5">Kỳ Thi Thử Tuyển Sinh vào lớp 10</p>
                 </div>
 
+                <!-- Thông tin học sinh -->
                 <div class="flex flex-col gap-y-1.5 sm:gap-y-2 text-sm sm:text-base relative z-10 font-medium">
                     <div class="flex justify-between items-center border-b border-slate-100 pb-1.5">
                         <span class="text-slate-500 whitespace-nowrap mr-2">Họ và tên:</span>
@@ -187,11 +212,6 @@
                     </div>
 
                     <div class="flex justify-between items-center border-b border-slate-100 pb-1.5">
-                        <span class="text-slate-500 whitespace-nowrap mr-2">Giới tính:</span>
-                        <span id="tk-gender" class="font-bold text-slate-800 text-right">...</span>
-                    </div>
-
-                    <div class="flex justify-between items-center border-b border-slate-100 pb-1.5">
                         <span class="text-slate-500 whitespace-nowrap mr-2">SĐT Phụ Huynh:</span>
                         <span id="tk-phone" class="font-bold text-slate-800 text-right">...</span>
                     </div>
@@ -201,57 +221,70 @@
                         <span id="tk-campus" class="font-bold text-royal text-right truncate max-w-[60%]">...</span>
                     </div>
 
-                    <!-- MỤC LỆ PHÍ THI NỔI BẬT -->
                     <div class="flex justify-between items-center border-b border-slate-100 pb-1.5 mt-1">
                         <span class="text-slate-500 whitespace-nowrap mr-2">Lệ phí thi:</span>
                         <span id="tk-payment-status" class="font-bold text-xs sm:text-sm px-2.5 py-0.5 rounded-md text-right ml-auto transition-all">...</span>
                     </div>
                 </div>
 
-                <div class="mt-4 sm:mt-6 bg-gradient-to-br from-indigo-50 to-blue-50 p-3 sm:p-4 rounded-xl border border-indigo-100 relative z-10 shadow-inner">
+                <!-- Phân phòng -->
+                <div class="mt-4 sm:mt-5 bg-gradient-to-br from-indigo-50 to-blue-50 p-3 sm:p-4 rounded-xl border border-indigo-100 relative z-10 shadow-inner">
                     <h3 class="text-center font-bold text-[10px] sm:text-xs text-slate-500 mb-2.5 uppercase tracking-widest">Thông Tin Phân Phòng</h3>
-                    
                     <div class="grid grid-cols-3 gap-2 sm:gap-3 text-center">
                         <div class="bg-white p-2 rounded-lg shadow-sm border border-slate-100 flex flex-col items-center justify-center">
-                            <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-blue-100 flex items-center justify-center mb-1 shrink-0">
-                                <i class="fa-solid fa-hashtag text-royal text-[10px] sm:text-xs"></i>
-                            </div>
-                            <p class="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider leading-none mb-0.5">SBD</p>
-                            <p id="tk-sbd" class="font-black text-sm sm:text-xl text-royal leading-tight tracking-tight">...</p>
+                            <p class="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider leading-none mb-1">SBD</p>
+                            <p id="tk-sbd" class="font-black text-sm sm:text-lg text-royal leading-tight tracking-tight">...</p>
                         </div>
-
                         <div class="bg-white p-2 rounded-lg shadow-sm border border-slate-100 flex flex-col items-center justify-center">
-                            <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-red-100 flex items-center justify-center mb-1 shrink-0">
-                                <i class="fa-solid fa-location-dot text-red-500 text-[10px] sm:text-xs"></i>
-                            </div>
-                            <p class="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider leading-none mb-0.5">Điểm thi</p>
+                            <p class="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider leading-none mb-1">Điểm thi</p>
                             <p id="tk-location" class="font-bold text-[11px] sm:text-sm text-slate-800 leading-tight">...</p>
                         </div>
-
                         <div class="bg-white p-2 rounded-lg shadow-sm border border-slate-100 flex flex-col items-center justify-center">
-                            <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-emerald-100 flex items-center justify-center mb-1 shrink-0">
-                                <i class="fa-solid fa-door-open text-emerald-600 text-[10px] sm:text-xs"></i>
-                            </div>
-                            <p class="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider leading-none mb-0.5">Phòng thi</p>
+                            <p class="text-[9px] sm:text-[10px] text-slate-400 uppercase font-bold tracking-wider leading-none mb-1">Phòng thi</p>
                             <p id="tk-room" class="font-bold text-[11px] sm:text-sm text-slate-800 leading-tight">...</p>
                         </div>
                     </div>
                 </div>
 
-            </div> <!-- Kết thúc phiếu dự thi -->
+                <!-- KHU VỰC ĐIỂM THI (Sẽ hiện nếu có điểm) -->
+                <div id="score-container" class="mt-4 sm:mt-5 bg-gradient-to-br from-emerald-50 to-teal-50 p-4 sm:p-5 rounded-xl border border-emerald-100 relative z-10 shadow-inner">
+                    <h3 class="text-center font-bold text-[11px] sm:text-sm text-emerald-700 mb-3 uppercase tracking-widest border-b border-emerald-200 pb-2"><i class="fa-solid fa-ranking-star mr-1"></i> Bảng Điểm Thi Thử</h3>
+                    
+                    <div class="grid grid-cols-3 gap-2 sm:gap-4">
+                        <!-- Toán -->
+                        <div class="text-center flex flex-col items-center bg-white py-2 rounded shadow-sm border border-emerald-50">
+                            <span class="text-xs text-slate-500 font-bold uppercase mb-1">Toán</span>
+                            <span id="score-math" class="text-xl sm:text-2xl font-black text-slate-800">-</span>
+                        </div>
+                        <!-- Văn -->
+                        <div class="text-center flex flex-col items-center bg-white py-2 rounded shadow-sm border border-emerald-50">
+                            <span class="text-xs text-slate-500 font-bold uppercase mb-1">Văn</span>
+                            <span id="score-lit" class="text-xl sm:text-2xl font-black text-slate-800">-</span>
+                        </div>
+                        <!-- Anh -->
+                        <div class="text-center flex flex-col items-center bg-white py-2 rounded shadow-sm border border-emerald-50">
+                            <span class="text-xs text-slate-500 font-bold uppercase mb-1">Anh</span>
+                            <span id="score-eng" class="text-xl sm:text-2xl font-black text-slate-800">-</span>
+                        </div>
+                    </div>
+                    <!-- Tổng Điểm -->
+                    <div class="mt-3 text-center bg-emerald-600 text-white py-2 rounded-lg font-bold shadow-md">
+                        Tổng điểm: <span id="score-total" class="text-lg">0.00</span>
+                    </div>
+                    <p id="score-waiting-msg" class="text-center text-xs text-emerald-600 mt-2 font-medium italic hidden">Hệ thống đang cập nhật điểm, vui lòng quay lại sau.</p>
+                </div>
 
-            <!-- Hướng Dẫn Thanh Toán Cố Định (Chỉ hiển thị khi chưa đóng lệ phí) -->
+            </div> 
+
+            <!-- Hướng Dẫn Thanh Toán (Chỉ hiển thị khi chưa đóng lệ phí) -->
             <div id="payment-instruction" class="glass-card p-5 sm:p-8 rounded-xl sm:rounded-2xl max-w-xl mx-auto bg-white shadow-lg print-hidden border-2 border-dashed border-blue-200 hidden mt-4">
                 <div class="text-center mb-4">
                     <h3 class="text-lg font-bold text-slate-800 mb-1">Thanh Toán Lệ Phí Thi</h3>
-                    <p class="text-sm text-red-600 font-semibold">Vui lòng thanh toán lệ phí thi 15.000đ để được nhận Số báo danh và Phòng thi.</p>
+                    <p class="text-sm text-red-600 font-semibold">Vui lòng thanh toán lệ phí thi 15.000đ để nhận SBD.</p>
                 </div>
-                
                 <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 mb-4 flex justify-center shadow-inner">
-                    <!-- Ảnh QR Thanh Toán -->
                     <img src="https://res.cloudinary.com/dmd2aahzc/image/upload/v1777797030/qr-ck_ihjjix.jpg" alt="Mã QR Thanh toán" class="w-full max-w-[200px] object-contain mix-blend-multiply rounded-lg">
                 </div>
-                
                 <div class="bg-blue-50/80 text-blue-900 p-3 rounded-xl text-sm mb-4 border border-blue-100">
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-slate-600 font-medium">Số tiền:</span> 
@@ -262,19 +295,12 @@
                         <span id="inline-qr-content" class="font-mono font-bold bg-white px-2 py-0.5 rounded border border-blue-200 text-royal tracking-wider text-base">...</span>
                     </div>
                 </div>
-
-                <div class="bg-amber-50 border border-amber-200 p-3 rounded-xl text-sm">
-                    <p class="text-amber-800 font-bold mb-1"><i class="fa-solid fa-location-dot mr-1"></i> Hoặc đến cơ sở Tâm Đức Biệt Thự:</p>
-                    <a href="https://maps.app.goo.gl/aJ1Ye8srGScV4fLX9" target="_blank" class="text-blue-600 hover:text-blue-800 font-semibold underline text-xs block mb-1">
-                        Xem bản đồ tại đây
-                    </a>
-                    <p class="text-slate-600 text-xs">Để thanh toán và nhận số báo danh nhanh nhất.</p>
-                </div>
             </div>
 
+            <!-- Nút chức năng -->
             <div class="mt-5 pt-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 print-hidden relative z-10 max-w-xl mx-auto">
                 <button id="btn-back" class="text-slate-500 hover:text-indigo-600 font-medium text-xs sm:text-sm py-2 transition-colors flex items-center gap-2 order-2 sm:order-1">
-                    <i class="fa-solid fa-arrow-left"></i> Tìm SĐT khác
+                    <i class="fa-solid fa-arrow-left"></i> Tra cứu tài khoản khác
                 </button>
                 <button id="btn-print" class="w-full sm:w-auto bg-slate-800 hover:bg-black text-white px-6 py-2.5 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 order-1 sm:order-2 font-bold text-sm">
                     <i class="fa-solid fa-print text-sm"></i> LƯU / IN PHIẾU
@@ -286,10 +312,11 @@
     </main>
 
     <script type="module">
-        const GOOGLE_SHEET_CSV_URL = "\u0068\u0074\u0074\u0070\u0073\u003a\u002f\u002f\u0064\u006f\u0063\u0073\u002e\u0067\u006f\u006f\u0067\u006c\u0065\u002e\u0063\u006f\u006d\u002f\u0073\u0070\u0072\u0065\u0061\u0064\u0073\u0068\u0065\u0065\u0074\u0073\u002f\u0064\u002f\u0065\u002f\u0032\u0050\u0041\u0043\u0058\u002d\u0031\u0076\u0054\u0035\u0039\u0073\u0063\u0032\u004b\u006c\u0071\u0057\u004a\u004d\u0048\u002d\u0030\u0077\u005f\u0048\u004c\u0067\u0045\u006f\u005f\u0054\u0055\u0036\u0071\u006b\u004e\u0041\u0052\u005a\u006f\u0064\u0065\u0054\u0043\u0047\u0056\u0057\u0039\u0042\u005a\u005a\u0047\u006a\u0073\u0031\u0046\u0038\u006d\u005f\u0049\u0063\u006b\u0054\u0059\u0058\u0068\u0034\u0074\u006a\u0067\u0075\u006a\u002d\u0053\u0064\u0072\u0053\u005a\u0062\u0039\u0065\u0064\u006c\u006e\u0064\u002f\u0070\u0075\u0062\u003f\u006f\u0075\u0074\u0070\u0075\u0074\u003d\u0063\u0073\u0076";
-
+        // --- 1. CONFIGURATION & STATE ---
+        const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMtjHtWLHSQrOcP2Uui-z6EAgCEiMK1K9UxANdobRCw-hNVoibiSpeMuops8vbbXVRbO-xZmky3mz-/pub?output=csv";
         let registrationsList = [];
 
+        // UI Elements
         const ui = {
             loading: document.getElementById('loading-screen'),
             searchSection: document.getElementById('search-section'),
@@ -303,22 +330,35 @@
             inlineQrContent: document.getElementById('inline-qr-content')
         };
 
+        // Custom Notification (thay thế alert)
+        const showToast = (message, type = 'error') => {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const msg = document.getElementById('toast-msg');
+            
+            toast.className = 'toast show ' + (type === 'error' ? 'toast-error' : 'toast-success');
+            icon.className = type === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-check';
+            msg.textContent = message;
+
+            setTimeout(() => { toast.classList.remove('show'); }, 3500);
+        };
+
+        // --- 3. GOOGLE SHEETS CSV FETCHING & PARSING ---
         const fetchCSVData = async () => {
             if (!GOOGLE_SHEET_CSV_URL) return;
             try {
-                // Tải file CSV từ Google Sheets (có thêm parameter t để tránh lưu cache cũ)
                 const response = await fetch(GOOGLE_SHEET_CSV_URL + "&t=" + new Date().getTime());
                 const text = await response.text();
                 
                 const rows = text.split(/\r?\n/);
                 const parsedData = [];
                 
+                // Bỏ qua dòng tiêu đề (i=0)
                 for (let i = 1; i < rows.length; i++) { 
                     if(!rows[i].trim()) continue;
                     
                     const cols = [];
-                    let quote = false;
-                    let col = "";
+                    let quote = false; let col = "";
                     for (let j = 0; j < rows[i].length; j++) {
                         let cc = rows[i][j];
                         if (cc === '"') { quote = !quote; continue; }
@@ -328,31 +368,27 @@
                     cols.push(col.trim());
                     
                     if (cols.length >= 8) {
-                        
-                        // LOGIC NHẬN DIỆN "ĐÃ THANH TOÁN" THÔNG MINH
+                        // Xác định trạng thái thanh toán (cột J - index 9)
                         let isPaid = false;
-                        // Kiểm tra từ cột thứ 9 (index 8) trở đi xem có dấu hiệu thanh toán không
-                        for (let k = 8; k < cols.length; k++) {
-                            if (cols[k]) {
-                                let val = cols[k].replace(/^"|"$/g, '').trim().toLowerCase();
-                                // Chấp nhận các chữ: x, v, đã, rồi, ok, yes, true
-                                if (val === 'x' || val === 'v' || val.includes('đã') || val.includes('rồi') || val === 'ok' || val === 'yes' || val === 'true') {
-                                    isPaid = true;
-                                    break;
-                                }
+                        if (cols[9]) {
+                            let val = cols[9].replace(/^"|"$/g, '').trim().toLowerCase();
+                            if (['x', 'v', 'đã', 'rồi', 'ok', 'yes', 'true'].some(v => val.includes(v))) {
+                                isPaid = true;
                             }
                         }
 
                         parsedData.push({
                             fullName: cols[0] ? cols[0].replace(/^"|"$/g, '').trim() : '',
                             dob: cols[1] ? cols[1].replace(/^"|"$/g, '').trim() : '',
-                            gender: cols[2] ? cols[2].replace(/^"|"$/g, '').trim() : '',
                             phone: cols[3] ? cols[3].replace(/[^0-9]/g, '') : '', 
-                            campus: cols[4] ? cols[4].replace(/^"|"$/g, '').trim() : '',
                             sbd: cols[5] ? cols[5].replace(/^'|^"|"$|'/g, '').trim() : '',
                             examLocation: cols[6] ? cols[6].replace(/^"|"$/g, '').trim() : '',
                             room: cols[7] ? cols[7].replace(/^"|"$/g, '').trim() : '',
-                            isPaid: isPaid
+                            isPaid: isPaid,
+                            // Lưu nguyên gốc chuỗi điểm (Cột K=10, L=11, M=12)
+                            scoreMath: cols[10] ? cols[10].replace(/^"|"$/g, '').trim() : '',
+                            scoreLit: cols[11] ? cols[11].replace(/^"|"$/g, '').trim() : '',
+                            scoreEng: cols[12] ? cols[12].replace(/^"|"$/g, '').trim() : ''
                         });
                     }
                 }
@@ -368,52 +404,54 @@
         // Chạy tải dữ liệu khi mở trang
         fetchCSVData();
 
+        // --- 4. SEARCH LOGIC (Phone or SBD) ---
         ui.searchForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const originalBtnContent = ui.btnSearch.innerHTML;
             ui.btnSearch.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> ĐANG TÌM...`;
             ui.btnSearch.disabled = true;
-            ui.btnSearch.classList.add('opacity-75', 'cursor-not-allowed');
 
             try {
-                // Ép làm mới danh sách CSV trước khi tìm để có dữ liệu cập nhật mới nhất
+                // Làm mới dữ liệu
                 await fetchCSVData();
 
-                const rawPhone = document.getElementById('search-phone').value.trim();
-                const cleanPhoneSearch = rawPhone.replace(/[^0-9]/g, '');
+                const searchInput = document.getElementById('search-input').value.trim();
+                const searchLower = searchInput.toLowerCase();
+                const cleanPhoneSearch = searchInput.replace(/[^0-9]/g, '');
                 
-                // Lọc ra các phiếu của số điện thoại (Lấy phiếu mới nhất nếu có nhiều)
+                // Lọc theo SĐT hoặc SBD (Không phân biệt hoa thường)
                 const foundTickets = registrationsList.filter(r => {
-                    const cleanPhoneR = r.phone ? r.phone.replace(/[^0-9]/g, '') : '';
-                    return cleanPhoneR === cleanPhoneSearch;
+                    const matchPhone = (cleanPhoneSearch.length >= 9) && (r.phone === cleanPhoneSearch);
+                    const matchSbd = r.sbd && (r.sbd.toLowerCase() === searchLower);
+                    return matchPhone || matchSbd;
                 });
 
                 if (foundTickets.length > 0) {
-                    const latestTicket = foundTickets[foundTickets.length - 1];
+                    const latestTicket = foundTickets[foundTickets.length - 1]; // Lấy bản ghi cuối (mới nhất)
                     showTicket(latestTicket);
                 } else {
-                    alert("Không tìm thấy thông tin đăng ký với số điện thoại này. Vui lòng kiểm tra lại!");
+                    showToast("Không tìm thấy thông tin đăng ký với SĐT/SBD này!", "error");
                 }
             } catch (err) {
-                alert("Lỗi tải dữ liệu. Vui lòng thử lại!");
+                showToast("Lỗi kết nối. Vui lòng thử lại!", "error");
             } finally {
                 ui.btnSearch.innerHTML = originalBtnContent;
                 ui.btnSearch.disabled = false;
-                ui.btnSearch.classList.remove('opacity-75', 'cursor-not-allowed');
             }
         });
 
+        // --- 5. DISPLAY TICKET & SCORES ---
         const showTicket = (data) => {
+            // Format ngày sinh
             const dStr = data.dob.split('-');
             const displayDob = dStr.length === 3 ? `${dStr[2]}/${dStr[1]}/${dStr[0]}` : data.dob;
 
             document.getElementById('tk-fullname').textContent = data.fullName;
             document.getElementById('tk-dob').textContent = displayDob;
-            document.getElementById('tk-gender').textContent = data.gender;
             document.getElementById('tk-phone').textContent = data.phone;
-            document.getElementById('tk-campus').textContent = data.campus;
-            document.getElementById('tk-location').textContent = data.examLocation;
+            document.getElementById('tk-campus').textContent = data.examLocation || '...';
+            document.getElementById('tk-location').textContent = data.examLocation || '...';
 
             const paymentStatus = document.getElementById('tk-payment-status');
             const sbdElement = document.getElementById('tk-sbd');
@@ -423,9 +461,9 @@
                 paymentStatus.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Đã đóng lệ phí';
                 paymentStatus.className = "font-bold text-[11px] sm:text-xs px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-700 ml-auto whitespace-nowrap shadow-sm";
                 
-                sbdElement.textContent = data.sbd;
-                sbdElement.className = 'font-black text-sm sm:text-xl text-royal leading-tight tracking-tight';
-                roomElement.textContent = data.room;
+                sbdElement.textContent = data.sbd || 'Chờ phân SBD';
+                sbdElement.className = 'font-black text-sm sm:text-lg text-royal leading-tight tracking-tight';
+                roomElement.textContent = data.room || '...';
                 
                 ui.paymentAlert.classList.add('hidden');
                 ui.paymentInstruction.classList.add('hidden');
@@ -433,25 +471,60 @@
                 paymentStatus.innerHTML = 'Chưa đóng';
                 paymentStatus.className = "font-bold text-[11px] sm:text-xs px-2.5 py-1 rounded-md bg-slate-100 text-slate-500 ml-auto whitespace-nowrap";
                 
-                sbdElement.textContent = 'Đang cập nhật';
+                sbdElement.textContent = 'Khóa';
                 sbdElement.className = 'font-bold text-[10px] sm:text-[13px] text-amber-600 leading-tight tracking-tight mt-1';
                 roomElement.textContent = '...';
 
                 ui.paymentAlert.classList.remove('hidden');
                 ui.paymentInstruction.classList.remove('hidden');
                 
-                // Cập nhật SĐT vào nội dung CK
                 if (ui.inlineQrContent) {
-                    ui.inlineQrContent.textContent = data.phone.replace(/[^0-9]/g, '');
+                    ui.inlineQrContent.textContent = data.phone;
                 }
             }
 
+            // --- XỬ LÝ HIỂN THỊ ĐIỂM THI ---
+            const pMath = document.getElementById('score-math');
+            const pLit = document.getElementById('score-lit');
+            const pEng = document.getElementById('score-eng');
+            const pTotal = document.getElementById('score-total');
+            const waitMsg = document.getElementById('score-waiting-msg');
+
+            // Hiển thị điểm nguyên gốc từ sheet (có sao hiện vậy, không làm tròn)
+            pMath.textContent = data.scoreMath !== '' ? data.scoreMath : '-';
+            pLit.textContent = data.scoreLit !== '' ? data.scoreLit : '-';
+            pEng.textContent = data.scoreEng !== '' ? data.scoreEng : '-';
+
+            // Hàm parse điểm để tính tổng (đổi dấu phẩy sang dấu chấm để tính toán)
+            const parseScore = (str) => {
+                if (!str) return NaN;
+                const num = parseFloat(str.replace(',', '.'));
+                return isNaN(num) ? NaN : num;
+            };
+
+            const m = parseScore(data.scoreMath);
+            const l = parseScore(data.scoreLit);
+            const e = parseScore(data.scoreEng);
+            
+            // Nếu có ít nhất 1 điểm được nhập (không phải NaN)
+            if (!isNaN(m) || !isNaN(l) || !isNaN(e)) {
+                // Tính tổng (những môn chưa thi/chưa chấm coi như 0 trong lúc cộng)
+                let total = (isNaN(m) ? 0 : m) + (isNaN(l) ? 0 : l) + (isNaN(e) ? 0 : e);
+                // Hiển thị tổng, trả lại dấu phẩy thập phân và không ép thêm .00
+                pTotal.textContent = total.toString().replace('.', ',');
+                waitMsg.classList.add('hidden');
+            } else {
+                pTotal.textContent = '0';
+                waitMsg.classList.remove('hidden');
+            }
+
+            // Switch view
             ui.searchSection.classList.add('hidden');
             ui.ticketSection.classList.remove('hidden');
-            
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
+        // --- 6. UTILITY BUTTONS ---
         ui.btnBack.addEventListener('click', () => {
             ui.ticketSection.classList.add('hidden');
             ui.searchSection.classList.remove('hidden');
